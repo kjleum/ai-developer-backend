@@ -1,157 +1,64 @@
 import os
-import base64
 import aiohttp
 from typing import Dict, Any
 from github import Github
-import tempfile
-import shutil
 
 class DeployEngine:
     def __init__(self):
         self.github_token = os.getenv("GITHUB_TOKEN")
         self.render_token = os.getenv("RENDER_API_KEY")
-        self.github = Github(self.github_token)
-        # ❌ Было: "https://api.render.com/v1 " (с пробелом!)
-        # ✅ Исправлено:
-        self.render_api = "https://api.render.com/v1"
+        self.github = Github(self.github_token) if self.github_token else None
 
-    async def deploy(self, project_id: str, files: Dict[str, str]) -> Dict[str, Any]:
-        """
-        Полный цикл деплоя:
-        1. Создать GitHub репозиторий
-        2. Залить код
-        3. Создать сервис на Render
-        4. Вернуть URL
-        """
+    async def deploy(self, project_id: str, name: str, files: Dict[str, str]) -> Dict[str, Any]:
         try:
-            print(f"[Deploy] Начало деплоя проекта {project_id}")
-
-            # 1. Создаем репозиторий на GitHub
-            repo_name = f"ai-project-{project_id[:8]}"
-            repo = await self._create_github_repo(repo_name)
-            print(f"[Deploy] GitHub репозиторий создан: {repo['url']}")
-
-            # 2. Заливаем код
-            await self._push_to_github(repo['full_name'], files)
-            print(f"[Deploy] Код загружен на GitHub")
-
-            # 3. Создаем сервис на Render
-            render_service = await self._create_render_service(repo_name, repo['clone_url'])
-            print(f"[Deploy] Render сервис создан: {render_service['url']}")
+            repo = await self._create_repo(name)
+            await self._push_files(repo["full_name"], files)
+            service = await self._create_render_service(name, repo["clone_url"])
 
             return {
                 "success": True,
-                "url": render_service['url'],
-                "github_url": repo['url'],
-                "logs": f"Деплой успешен. Сервис: {render_service['name']}"
+                "github_url": repo["url"],
+                "deploy_url": service["url"],
+                "status": "deploying"
             }
-
         except Exception as e:
-            print(f"[Deploy] Ошибка: {str(e)}")
-            return {
-                "success": False,
-                "url": None,
-                "logs": str(e)
-            }
+            return {"success": False, "error": str(e)}
 
-    async def redeploy(self, project_id: str, files: Dict[str, str]) -> Dict[str, Any]:
-        """Передеплой существующего проекта"""
-        repo_name = f"ai-project-{project_id[:8]}"
+    async def _create_repo(self, name: str) -> Dict[str, str]:
+        if not self.github:
+            raise Exception("GitHub token not configured")
 
+        user = self.github.get_user()
         try:
-            user = self.github.get_user()
-            repo_full_name = f"{user.login}/{repo_name}"
-            
-            # Обновляем код
-            await self._push_to_github(repo_full_name, files)
+            repo = user.create_repo(name, private=True, auto_init=True)
+        except:
+            repo = self.github.get_repo(f"{user.login}/{name}")
 
-            # Render автоматически перезапустится при новом коммите
-            async with aiohttp.ClientSession() as session:
-                headers = {"Authorization": f"Bearer {self.render_token}"}
-                async with session.get(
-                    f"{self.render_api}/services",
-                    headers=headers
-                ) as resp:
-                    if resp.status != 200:
-                        return {"success": False, "url": None, "logs": "Ошибка получения сервисов"}
-                    
-                    services = await resp.json()
-                    for service in services:
-                        if service.get('name') == repo_name:
-                            return {
-                                "success": True,
-                                "url": service['serviceDetails']['url'],
-                                "logs": "Обновление запущено"
-                            }
+        return {
+            "name": repo.name,
+            "full_name": repo.full_name,
+            "url": repo.html_url,
+            "clone_url": repo.clone_url
+        }
 
-            return {"success": False, "url": None, "logs": "Сервис не найден"}
-
-        except Exception as e:
-            return {"success": False, "url": None, "logs": str(e)}
-
-    async def _create_github_repo(self, name: str) -> Dict[str, str]:
-        """Создание приватного репозитория на GitHub"""
-        try:
-            user = self.github.get_user()
-            repo = user.create_repo(
-                name=name,
-                private=True,
-                description=f"AI-generated project {name}",
-                auto_init=True
-            )
-            return {
-                "name": repo.name,
-                "full_name": repo.full_name,
-                "url": repo.html_url,
-                "clone_url": repo.clone_url
-            }
-        except Exception as e:
-            # Если репозиторий уже существует
-            if "already exists" in str(e).lower():
-                user = self.github.get_user()
-                repo = self.github.get_repo(f"{user.login}/{name}")
-                return {
-                    "name": repo.name,
-                    "full_name": repo.full_name,
-                    "url": repo.html_url,
-                    "clone_url": repo.clone_url
-                }
-            raise e
-
-    async def _push_to_github(self, repo_full_name: str, files: Dict[str, str]):
-        """Загрузка файлов в репозиторий через GitHub API"""
+    async def _push_files(self, repo_full_name: str, files: Dict[str, str]):
         repo = self.github.get_repo(repo_full_name)
-
-        for filename, content in files.items():
+        for path, content in files.items():
             try:
-                # Пробуем получить существующий файл
-                try:
-                    existing = repo.get_contents(filename)
-                    # Обновляем существующий
-                    repo.update_file(
-                        path=filename,
-                        message=f"Update {filename}",
-                        content=content,
-                        sha=existing.sha
-                    )
-                except:
-                    # Создаем новый
-                    repo.create_file(
-                        path=filename,
-                        message=f"Create {filename}",
-                        content=content
-                    )
-            except Exception as e:
-                print(f"[Deploy] Ошибка загрузки {filename}: {e}")
+                existing = repo.get_contents(path)
+                repo.update_file(path, f"Update {path}", content, existing.sha)
+            except:
+                repo.create_file(path, f"Create {path}", content)
 
     async def _create_render_service(self, name: str, repo_url: str) -> Dict[str, str]:
-        """Создание веб-сервиса на Render"""
+        if not self.render_token:
+            raise Exception("Render token not configured")
+
         async with aiohttp.ClientSession() as session:
             headers = {
                 "Authorization": f"Bearer {self.render_token}",
                 "Content-Type": "application/json"
             }
-
             payload = {
                 "type": "web_service",
                 "name": name,
@@ -159,35 +66,18 @@ class DeployEngine:
                 "branch": "main",
                 "buildCommand": "pip install -r requirements.txt",
                 "startCommand": "uvicorn main:app --host 0.0.0.0 --port $PORT",
-                "envVars": [
-                    {"key": "PYTHON_VERSION", "value": "3.11"}
-                ]
+                "envVars": [{"key": "PYTHON_VERSION", "value": "3.11"}]
             }
 
             async with session.post(
-                f"{self.render_api}/services",
-                headers=headers,
-                json=payload
+                "https://api.render.com/v1/services",
+                headers=headers, json=payload
             ) as resp:
-                if resp.status in [200, 201]:
-                    data = await resp.json()
-                    return {
-                        "name": data['name'],
-                        "url": data['serviceDetails']['url'],
-                        "id": data['id']
-                    }
-                else:
-                    error = await resp.text()
-                    raise Exception(f"Render API error: {error}")
-
-    async def get_logs(self, service_id: str) -> str:
-        """Получение логов сервиса"""
-        async with aiohttp.ClientSession() as session:
-            headers = {"Authorization": f"Bearer {self.render_token}"}
-            async with session.get(
-                f"{self.render_api}/services/{service_id}/logs",
-                headers=headers
-            ) as resp:
-                if resp.status == 200:
-                    return await resp.text()
-                return "Логи недоступны"
+                if resp.status not in [200, 201]:
+                    raise Exception(f"Render error: {await resp.text()}")
+                data = await resp.json()
+                return {
+                    "id": data["id"],
+                    "name": data["name"],
+                    "url": data["serviceDetails"]["url"]
+                }
