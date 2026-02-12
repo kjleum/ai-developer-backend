@@ -1,18 +1,18 @@
-
 import os
 import base64
 import aiohttp
 from typing import Dict, Any
 from github import Github
-import git
 import tempfile
 import shutil
 
 class DeployEngine:
     def __init__(self):
         self.github_token = os.getenv("GITHUB_TOKEN")
-        self.render_token = os.getenv("RENDER_API_KEY")  # rnd_hHa4drVJjMS4pekL4ovTphrV6yZz
+        self.render_token = os.getenv("RENDER_API_KEY")
         self.github = Github(self.github_token)
+        # ❌ Было: "https://api.render.com/v1 " (с пробелом!)
+        # ✅ Исправлено:
         self.render_api = "https://api.render.com/v1"
 
     async def deploy(self, project_id: str, files: Dict[str, str]) -> Dict[str, Any]:
@@ -56,24 +56,28 @@ class DeployEngine:
 
     async def redeploy(self, project_id: str, files: Dict[str, str]) -> Dict[str, Any]:
         """Передеплой существующего проекта"""
-        # Находим существующий репозиторий
         repo_name = f"ai-project-{project_id[:8]}"
 
         try:
+            user = self.github.get_user()
+            repo_full_name = f"{user.login}/{repo_name}"
+            
             # Обновляем код
-            await self._push_to_github(f"your-username/{repo_name}", files)
+            await self._push_to_github(repo_full_name, files)
 
             # Render автоматически перезапустится при новом коммите
-            # Находим URL сервиса
             async with aiohttp.ClientSession() as session:
                 headers = {"Authorization": f"Bearer {self.render_token}"}
                 async with session.get(
                     f"{self.render_api}/services",
                     headers=headers
                 ) as resp:
+                    if resp.status != 200:
+                        return {"success": False, "url": None, "logs": "Ошибка получения сервисов"}
+                    
                     services = await resp.json()
                     for service in services:
-                        if service['name'] == repo_name:
+                        if service.get('name') == repo_name:
                             return {
                                 "success": True,
                                 "url": service['serviceDetails']['url'],
@@ -103,7 +107,8 @@ class DeployEngine:
             }
         except Exception as e:
             # Если репозиторий уже существует
-            if "already exists" in str(e):
+            if "already exists" in str(e).lower():
+                user = self.github.get_user()
                 repo = self.github.get_repo(f"{user.login}/{name}")
                 return {
                     "name": repo.name,
