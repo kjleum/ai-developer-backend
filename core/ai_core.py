@@ -103,7 +103,7 @@ class AIAgent:
         """
         Исправление кода по фидбеку пользователя
         """
-        files_list = "\n".join([f"{k}:")
+        files_list = "\n".join([f"{k}:" for k in current_files.keys()])
         prompt = f"""
         Текущий код проекта:
         {files_list}
