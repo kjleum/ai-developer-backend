@@ -6,4 +6,4 @@ aiohttp
 supabase
 openai
 requests
-gitpython
+PyGithub
