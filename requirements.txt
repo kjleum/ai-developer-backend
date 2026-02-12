@@ -1,6 +1,9 @@
 fastapi
-uvicorn
+uvicorn[standard]
+pydantic
 python-dotenv
-openai
+aiohttp
 supabase
-PyGithub
+openai
+requests
+gitpython
