@@ -7,3 +7,5 @@ PyGithub==2.1.1
 GitPython==3.1.40
 aiohttp==3.9.1
 pydantic==2.5.0
+pydantic-core==2.14.0
+httpx==0.25.0
