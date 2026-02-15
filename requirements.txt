@@ -1,61 +1,9 @@
-# Web Framework
 fastapi
-uvicorn[standard]
-python-multipart
-websockets
-
-# Data Validation
-pydantic
+uvicorn
+sqlalchemy
+psycopg2-binary
 pydantic-settings
-
-# Environment
-dotenv-python
-python-dotenv
-
-# HTTP Client
-aiohttp
+python-jose
+passlib[bcrypt]
+cryptography
 httpx
-
-# Database
-supabase
-asyncpg
-sqlalchemy[asyncio]
-alembic
-
-# Vector Databases
-chromadb
-qdrant-client
-pgvector
-
-# AI/ML Utilities
-transformers
-torch
-numpy
-scikit-learn
-
-# GitHub Integration
-PyGithub
-
-# Image Processing
-Pillow
-
-# Audio Processing (optional)
-# librosa
-# soundfile
-
-# Monitoring & Logging
-sentry-sdk
-structlog
-
-# Testing
-pytest
-pytest-asyncio
-httpx
-
-# Production Server
-gunicorn
-
-# Development
-black
-isort
-mypy
