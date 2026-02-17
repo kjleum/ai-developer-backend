@@ -15,7 +15,6 @@ async def generate_text(
     request: GenerateRequest,
     user: dict = Depends(get_current_user)
 ):
-    """Generate text using AI."""
     response = await ai_manager.generate(
         prompt=request.prompt,
         provider=request.provider,
@@ -26,7 +25,6 @@ async def generate_text(
         user_id=user["id"]
     )
 
-    # Track usage (simplified)
     await db.add_usage(
         user_id=user["id"],
         provider=request.provider or "auto",
@@ -45,7 +43,7 @@ async def stream_generate(websocket: WebSocket):
             data = await websocket.receive_json()
             prompt = data.get("prompt")
             provider = data.get("provider")
-            user_id = data.get("user_id")  # In production, get from token
+            user_id = data.get("user_id")
 
             async for chunk in ai_manager.stream_generate(prompt, provider, user_id=user_id):
                 await websocket.send_text(chunk)
@@ -57,7 +55,6 @@ async def stream_generate(websocket: WebSocket):
     finally:
         await websocket.close()
 
-@router.get("/models")
-async def list_models(user: dict = Depends(get_current_user)):
-    return await ai_manager.list_models(user_id=user["id"])
-
+@router.get("/providers")
+async def list_providers():
+    return {"providers": ai_manager.get_available_providers()}

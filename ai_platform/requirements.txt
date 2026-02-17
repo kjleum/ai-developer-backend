@@ -30,6 +30,7 @@ torch==2.1.0
 numpy==1.26.0
 scikit-learn==1.4.0
 sentence-transformers==2.2.2
+openai==1.12.0
 
 # Task Queue
 celery==5.3.4

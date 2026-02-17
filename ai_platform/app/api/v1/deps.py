@@ -37,7 +37,6 @@ async def get_current_admin(user: dict = Depends(get_current_user)):
     return user
 
 async def get_optional_user(token: Optional[str] = Depends(oauth2_scheme)):
-    """For endpoints that work both with and without authentication."""
     if not token:
         return None
     payload = decode_jwt(token)

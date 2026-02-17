@@ -11,16 +11,13 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
 def hash_password(password: str) -> str:
-    """Хеширование пароля с солью."""
     salt = bcrypt.gensalt(rounds=12)
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def verify_password(password: str, hashed: str) -> bool:
-    """Проверка пароля."""
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 def create_jwt(user_id: int, is_admin: bool = False, expires_delta: Optional[timedelta] = None) -> str:
-    """Создание JWT токена доступа."""
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
@@ -36,7 +33,6 @@ def create_jwt(user_id: int, is_admin: bool = False, expires_delta: Optional[tim
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def decode_jwt(token: str) -> Optional[Dict]:
-    """Декодирование и валидация JWT токена."""
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return {
@@ -50,7 +46,6 @@ def decode_jwt(token: str) -> Optional[Dict]:
         return None
 
 def create_refresh_token(user_id: int) -> str:
-    """Создание refresh токена."""
     expire = datetime.utcnow() + timedelta(days=30)
     payload = {
         "sub": str(user_id),
@@ -58,25 +53,3 @@ def create_refresh_token(user_id: int) -> str:
         "type": "refresh"
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-
-import hmac
-import hashlib
-import urllib.parse
-
-def verify_telegram_init_data(init_data: str, bot_token: str) -> Dict[str, str]:
-    """Verify Telegram WebApp initData (Mini App).
-    Returns parsed dict if valid, else raises ValueError.
-    """
-    data = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
-    provided_hash = data.pop("hash", "")
-    if not provided_hash:
-        raise ValueError("No hash in initData")
-
-    check_string = "\n".join([f"{k}={data[k]}" for k in sorted(data.keys())])
-    secret_key = hashlib.sha256(bot_token.encode()).digest()
-    calculated_hash = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
-
-    if not hmac.compare_digest(calculated_hash, provided_hash):
-        raise ValueError("Bad initData hash")
-    return data

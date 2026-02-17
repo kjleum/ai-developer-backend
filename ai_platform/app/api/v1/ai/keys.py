@@ -13,13 +13,11 @@ async def add_api_key(
     key_data: APIKeyIn,
     user: dict = Depends(get_current_user)
 ):
-    """Save a user's API key for a provider."""
     await db.save_api_key(user["id"], key_data.provider, key_data.api_key)
     return {"status": "ok", "provider": key_data.provider}
 
 @router.get("/keys", response_model=list[APIKeyOut])
 async def list_api_keys(user: dict = Depends(get_current_user)):
-    """List all API keys for the current user (metadata only)."""
     keys = await db.list_api_keys(user["id"])
     return keys
 
@@ -28,6 +26,5 @@ async def delete_api_key(
     provider: str,
     user: dict = Depends(get_current_user)
 ):
-    """Delete a user's API key for a provider."""
     await db.delete_api_key(user["id"], provider)
     return {"status": "ok"}

@@ -22,23 +22,19 @@ async def upload_avatar(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user)
 ):
-    # Validate file size (e.g., max 5MB)
     contents = await file.read()
     if len(contents) > 5 * 1024 * 1024:
         raise HTTPException(400, "File too large (max 5MB)")
 
-    # Ensure directory exists
     avatar_dir = Path("static/avatars")
     avatar_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save file with user ID to avoid collisions
     file_extension = Path(file.filename).suffix
     avatar_path = avatar_dir / f"{user['id']}{file_extension}"
 
     with open(avatar_path, "wb") as f:
         f.write(contents)
 
-    # Update user record with URL
     avatar_url = f"/static/avatars/{user['id']}{file_extension}"
     await db.update_user(user["id"], avatar_url=avatar_url)
 

@@ -73,12 +73,12 @@ class Project(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    status = Column(String, default="draft") # draft, generating, building, live, error
+    status = Column(String, default="draft")
     config = Column(JSON, nullable=False)
     files = Column(JSON, default={})
     github_url = Column(String, nullable=True)
     deploy_url = Column(String, nullable=True)
-    deploy_platform = Column(String, nullable=True) # render, vercel, netlify
+    deploy_platform = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -90,7 +90,7 @@ class ProjectLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
-    log_type = Column(String, nullable=False) # info, error, execution, retry
+    log_type = Column(String, nullable=False)
     message = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -114,7 +114,7 @@ class Notification(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    type = Column(String, nullable=False)  # email, telegram, push
+    type = Column(String, nullable=False)
     title = Column(String, nullable=False)
     message = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False)

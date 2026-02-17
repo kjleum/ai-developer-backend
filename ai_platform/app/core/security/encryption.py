@@ -8,19 +8,16 @@ if not ENCRYPTION_KEY:
 cipher = Fernet(ENCRYPTION_KEY.encode())
 
 def encrypt_key(plain_text: str) -> str:
-    """Шифрует API ключ пользователя."""
     if not plain_text:
         return ""
     return cipher.encrypt(plain_text.encode()).decode()
 
 def decrypt_key(encrypted: str) -> str:
-    """Расшифровывает API ключ пользователя."""
     if not encrypted:
         return ""
     return cipher.decrypt(encrypted.encode()).decode()
 
 def mask_key(key: str) -> str:
-    """Маскирует ключ для отображения в UI (например, 'sk-...aBcD')."""
     if not key or len(key) <= 8:
         return "******"
     return key[:4] + "..." + key[-4:]

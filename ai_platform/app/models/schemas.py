@@ -16,13 +16,12 @@ class EmbeddingsRequest(BaseModel):
     texts: List[str]
     provider: Optional[str] = None
 
-# ----- Медиа -----
 class ImageGenerationRequest(BaseModel):
     prompt: str
     negative_prompt: str = ""
     width: int = 512
     height: int = 512
-    model: str = "sd"  # sd, kandinsky, dalle
+    model: str = "sd"
     steps: int = 30
     cfg_scale: float = 7.0
 
@@ -37,7 +36,7 @@ class TTSRequest(BaseModel):
     speed: float = 1.0
 
 class STTRequest(BaseModel):
-    audio: str  # base64
+    audio: str
 
 # ----- Проекты -----
 class ProjectType(str, Enum):
