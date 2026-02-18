@@ -322,78 +322,87 @@ class Database:
             ]
 
 
-# ---------- Admin / Usage ----------
-async def get_usage(self, limit: int = 200) -> List[Dict]:
-    async with AsyncSessionLocal() as session:
-        q = await session.execute(
-            select(Usage).order_by(Usage.created_at.desc()).limit(limit)
-        )
-        rows = q.scalars().all()
-        return [{
-            "id": r.id,
-            "user_id": r.user_id,
-            "provider": r.provider,
-            "tokens_used": r.tokens_used,
-            "cost_estimate": float(r.cost_estimate),
-            "endpoint": r.endpoint,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-        } for r in rows]
+    # ---------- Admin / Usage ----------
+    async def get_usage(self, limit: int = 200) -> List[Dict]:
+        async with AsyncSessionLocal() as session:
+            q = await session.execute(
+                select(Usage).order_by(Usage.created_at.desc()).limit(limit)
+            )
+            rows = q.scalars().all()
+            return [{
+                "id": r.id,
+                "user_id": r.user_id,
+                "provider": r.provider,
+                "tokens_used": r.tokens_used,
+                "cost_estimate": float(r.cost_estimate),
+                "endpoint": r.endpoint,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            } for r in rows]
 
-async def admin_list_api_keys(self, user_id: Optional[int] = None) -> List[Dict]:
-    async with AsyncSessionLocal() as session:
-        stmt = select(APIKey).order_by(APIKey.created_at.desc()).limit(500)
-        if user_id is not None:
-            stmt = select(APIKey).where(APIKey.user_id == user_id).order_by(APIKey.created_at.desc()).limit(500)
-        q = await session.execute(stmt)
-        rows = q.scalars().all()
-        # do not reveal keys
-        return [{
-            "id": r.id,
-            "user_id": r.user_id,
-            "provider": r.provider,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-            "last_used": r.last_used.isoformat() if r.last_used else None,
-        } for r in rows]
+    async def admin_list_api_keys(self, user_id: Optional[int] = None) -> List[Dict]:
+        async with AsyncSessionLocal() as session:
+            stmt = select(APIKey).order_by(APIKey.created_at.desc()).limit(500)
+            if user_id is not None:
+                stmt = (
+                    select(APIKey)
+                    .where(APIKey.user_id == user_id)
+                    .order_by(APIKey.created_at.desc())
+                    .limit(500)
+                )
+            q = await session.execute(stmt)
+            rows = q.scalars().all()
+            return [{
+                "id": r.id,
+                "user_id": r.user_id,
+                "provider": r.provider,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "last_used": r.last_used.isoformat() if r.last_used else None,
+            } for r in rows]
 
+    async def ensure_admin_user(self):
+        """Create admin user from env if it doesn't exist."""
+        admin_email = os.getenv("ADMIN_EMAIL", "admin@local")
+        admin_password = os.getenv("ADMIN_PASSWORD", "admin12345")
+        async with AsyncSessionLocal() as session:
+            q = await session.execute(select(User).where(User.email == admin_email))
+            u = q.scalar_one_or_none()
+            if u:
+                if not u.is_admin:
+                    u.is_admin = True
+                    await session.commit()
+                return
+            hashed = hash_password(admin_password)
+            user = User(
+                email=admin_email,
+                password_hash=hashed,
+                full_name="Administrator",
+                is_admin=True,
+                is_active=True,
+            )
+            session.add(user)
+            await session.commit()
 
-async def ensure_admin_user(self):
-    """Create admin user from env if it doesn't exist."""
-    admin_email = os.getenv("ADMIN_EMAIL", "admin@local")
-    admin_password = os.getenv("ADMIN_PASSWORD", "admin12345")
-    async with AsyncSessionLocal() as session:
-        q = await session.execute(select(User).where(User.email == admin_email))
-        u = q.scalar_one_or_none()
-        if u:
-            if not u.is_admin:
-                u.is_admin = True
-                await session.commit()
-            return
-        hashed = hash_password(admin_password)
-        user = User(email=admin_email, password_hash=hashed, full_name="Administrator", is_admin=True, is_active=True)
-        session.add(user)
-        await session.commit()
+    async def get_user_by_telegram_id(self, telegram_id: str) -> Optional[Dict]:
+        async with AsyncSessionLocal() as session:
+            q = await session.execute(select(User).where(User.telegram_id == telegram_id))
+            u = q.scalar_one_or_none()
+            if not u:
+                return None
+            return {
+                "id": u.id,
+                "email": u.email,
+                "full_name": u.full_name,
+                "is_admin": u.is_admin,
+                "is_active": u.is_active,
+                "settings": u.settings,
+            }
 
-
-async def get_user_by_telegram_id(self, telegram_id: str) -> Optional[Dict]:
-    async with AsyncSessionLocal() as session:
-        q = await session.execute(select(User).where(User.telegram_id == telegram_id))
-        u = q.scalar_one_or_none()
-        if not u:
-            return None
-        return {
-            "id": u.id,
-            "email": u.email,
-            "full_name": u.full_name,
-            "is_admin": u.is_admin,
-            "is_active": u.is_active,
-            "settings": u.settings,
-        }
-
-
-async def touch_api_key_last_used(self, user_id: int, provider: str):
-    async with AsyncSessionLocal() as session:
-        await session.execute(
-            update(APIKey).where(APIKey.user_id == user_id, APIKey.provider == provider).values(last_used=func.now())
-        )
-        await session.commit()
+    async def touch_api_key_last_used(self, user_id: int, provider: str):
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(APIKey)
+                .where(APIKey.user_id == user_id, APIKey.provider == provider)
+                .values(last_used=func.now())
+            )
+            await session.commit()
 
