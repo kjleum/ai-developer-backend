@@ -4,6 +4,8 @@ uvicorn[standard]
 python-multipart
 websockets
 
+email-validator
+
 # Data Validation & Env
 pydantic
 pydantic-settings
