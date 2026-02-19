@@ -1,4 +1,4 @@
-import os
+from app.core.config import settings
 from typing import Optional, Dict, List
 from datetime import datetime
 
@@ -6,15 +6,12 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, update, delete, func
 
-from app.models.db_models import Base, User, APIKey, Project, ProjectLog, Usage, Reminder, Notification, CalendarEvent
+from app.models.db_models import Base, User, APIKey, Project, ProjectLog, Usage, Reminder, Notification, CalendarEvent, ChatThread, ChatMessage
 from app.core.security.auth import hash_password, verify_password
 from app.core.security.encryption import encrypt_key, decrypt_key
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL not set")
+DATABASE_URL = settings.DATABASE_URL
 
-# Convert postgresql:// to postgresql+asyncpg:// for async driver
 ASYNC_DB_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 engine = create_async_engine(ASYNC_DB_URL, echo=False, future=True)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -68,19 +65,20 @@ class Database:
             await session.commit()
 
     async def update_user(self, user_id: int, **kwargs):
-        """Update user fields; ignores None values."""
-        payload = {k: v for k, v in kwargs.items() if v is not None}
-        if not payload:
-            return
         async with AsyncSessionLocal() as session:
             await session.execute(
-                update(User).where(User.id == user_id).values(**payload)
+                update(User).where(User.id == user_id).values(**kwargs)
             )
             await session.commit()
 
-    async def list_users(self) -> List[Dict]:
+    async def list_users(self, q: str = "", limit: int = 100) -> List[Dict]:
         async with AsyncSessionLocal() as session:
-            result = await session.execute(select(User))
+            stmt = select(User)
+            if q:
+                like = f"%{q.lower()}%"
+                stmt = stmt.where(func.lower(User.email).like(like) | func.lower(User.full_name).like(like))
+            stmt = stmt.order_by(User.created_at.desc()).limit(limit)
+            result = await session.execute(stmt)
             users = result.scalars().all()
             return [
                 {
@@ -94,6 +92,26 @@ class Database:
                 }
                 for u in users
             ]
+
+    async def get_user_by_telegram_id(self, telegram_id: str) -> Optional[Dict]:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+            u = result.scalar_one_or_none()
+            if not u:
+                return None
+            return {
+                "id": u.id,
+                "email": u.email,
+                "full_name": u.full_name,
+                "avatar_url": u.avatar_url,
+                "telegram_id": u.telegram_id,
+                "is_admin": u.is_admin,
+                "is_active": u.is_active,
+                "balance": u.balance,
+                "settings": u.settings,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+                "last_login": u.last_login.isoformat() if u.last_login else None
+            }
 
     # ---------- API Keys ----------
     async def save_api_key(self, user_id: int, provider: str, api_key: str):
@@ -149,7 +167,6 @@ class Database:
             session.add(proj)
             await session.commit()
 
-            # Update user project count
             await session.execute(
                 update(User).where(User.id == user_id).values(total_projects=User.total_projects + 1)
             )
@@ -182,6 +199,13 @@ class Database:
             )
             await session.commit()
 
+    async def delete_project(self, project_id: int, user_id: int):
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(Project).where(Project.id == project_id, Project.user_id == user_id)
+            )
+            await session.commit()
+
     async def list_projects(self, user_id: int) -> List[Dict]:
         async with AsyncSessionLocal() as session:
             result = await session.execute(
@@ -203,6 +227,79 @@ class Database:
             log = ProjectLog(project_id=project_id, log_type=log_type, message=message)
             session.add(log)
             await session.commit()
+
+    # ---------- Chats ----------
+    async def create_thread(self, user_id: int, project_id: int, title: str) -> int:
+        async with AsyncSessionLocal() as session:
+            # Ensure project belongs to user
+            proj = await session.get(Project, project_id)
+            if not proj or proj.user_id != user_id:
+                raise ValueError("project not found")
+            th = ChatThread(user_id=user_id, project_id=project_id, title=title or "Новый чат")
+            session.add(th)
+            await session.commit()
+            return th.id
+
+    async def list_threads(self, user_id: int, project_id: Optional[int] = None, limit: int = 100) -> List[Dict]:
+        async with AsyncSessionLocal() as session:
+            stmt = select(ChatThread).where(ChatThread.user_id == user_id)
+            if project_id is not None:
+                stmt = stmt.where(ChatThread.project_id == project_id)
+            stmt = stmt.order_by(ChatThread.created_at.desc()).limit(limit)
+            res = await session.execute(stmt)
+            items = res.scalars().all()
+            return [
+                {
+                    "id": t.id,
+                    "project_id": t.project_id,
+                    "title": t.title,
+                    "created_at": t.created_at.isoformat() if t.created_at else None,
+                    "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+                }
+                for t in items
+            ]
+
+    async def get_thread(self, user_id: int, thread_id: int) -> Optional[Dict]:
+        async with AsyncSessionLocal() as session:
+            th = await session.get(ChatThread, thread_id)
+            if not th or th.user_id != user_id:
+                return None
+            return {
+                "id": th.id,
+                "project_id": th.project_id,
+                "title": th.title,
+                "created_at": th.created_at.isoformat() if th.created_at else None,
+                "updated_at": th.updated_at.isoformat() if th.updated_at else None,
+            }
+
+    async def add_message(self, user_id: int, thread_id: int, role: str, content: str) -> int:
+        async with AsyncSessionLocal() as session:
+            th = await session.get(ChatThread, thread_id)
+            if not th or th.user_id != user_id:
+                raise ValueError("thread not found")
+            msg = ChatMessage(thread_id=thread_id, role=role, content=content)
+            session.add(msg)
+            await session.commit()
+            return msg.id
+
+    async def list_messages(self, user_id: int, thread_id: int, limit: int = 200) -> List[Dict]:
+        async with AsyncSessionLocal() as session:
+            th = await session.get(ChatThread, thread_id)
+            if not th or th.user_id != user_id:
+                raise ValueError("thread not found")
+            stmt = select(ChatMessage).where(ChatMessage.thread_id == thread_id).order_by(ChatMessage.created_at.asc()).limit(limit)
+            res = await session.execute(stmt)
+            items = res.scalars().all()
+            return [
+                {
+                    "id": m.id,
+                    "thread_id": m.thread_id,
+                    "role": m.role,
+                    "content": m.content,
+                    "created_at": m.created_at.isoformat() if m.created_at else None,
+                }
+                for m in items
+            ]
 
     # ---------- Usage ----------
     async def add_usage(self, user_id: int, provider: str, tokens: int, cost: float, endpoint: str = ""):
@@ -321,88 +418,43 @@ class Database:
                 for e in events
             ]
 
-
-    # ---------- Admin / Usage ----------
+    # ---------- Admin / Logs ----------
     async def get_usage(self, limit: int = 200) -> List[Dict]:
         async with AsyncSessionLocal() as session:
-            q = await session.execute(
-                select(Usage).order_by(Usage.created_at.desc()).limit(limit)
-            )
-            rows = q.scalars().all()
-            return [{
-                "id": r.id,
-                "user_id": r.user_id,
-                "provider": r.provider,
-                "tokens_used": r.tokens_used,
-                "cost_estimate": float(r.cost_estimate),
-                "endpoint": r.endpoint,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-            } for r in rows]
+            result = await session.execute(select(Usage).order_by(Usage.created_at.desc()).limit(limit))
+            rows = result.scalars().all()
+            return [
+                {
+                    "id": r.id,
+                    "user_id": r.user_id,
+                    "provider": r.provider,
+                    "tokens_used": r.tokens_used,
+                    "cost_estimate": r.cost_estimate,
+                    "endpoint": r.endpoint,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+                for r in rows
+            ]
 
-    async def admin_list_api_keys(self, user_id: Optional[int] = None) -> List[Dict]:
+    async def admin_list_api_keys(self, user_id: int | None = None) -> List[Dict]:
         async with AsyncSessionLocal() as session:
-            stmt = select(APIKey).order_by(APIKey.created_at.desc()).limit(500)
+            stmt = select(APIKey)
             if user_id is not None:
-                stmt = (
-                    select(APIKey)
-                    .where(APIKey.user_id == user_id)
-                    .order_by(APIKey.created_at.desc())
-                    .limit(500)
-                )
-            q = await session.execute(stmt)
-            rows = q.scalars().all()
-            return [{
-                "id": r.id,
-                "user_id": r.user_id,
-                "provider": r.provider,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-                "last_used": r.last_used.isoformat() if r.last_used else None,
-            } for r in rows]
-
-    async def ensure_admin_user(self):
-        """Create admin user from env if it doesn't exist."""
-        admin_email = os.getenv("ADMIN_EMAIL", "admin@local")
-        admin_password = os.getenv("ADMIN_PASSWORD", "admin12345")
-        async with AsyncSessionLocal() as session:
-            q = await session.execute(select(User).where(User.email == admin_email))
-            u = q.scalar_one_or_none()
-            if u:
-                if not u.is_admin:
-                    u.is_admin = True
-                    await session.commit()
-                return
-            hashed = hash_password(admin_password)
-            user = User(
-                email=admin_email,
-                password_hash=hashed,
-                full_name="Administrator",
-                is_admin=True,
-                is_active=True,
-            )
-            session.add(user)
-            await session.commit()
-
-    async def get_user_by_telegram_id(self, telegram_id: str) -> Optional[Dict]:
-        async with AsyncSessionLocal() as session:
-            q = await session.execute(select(User).where(User.telegram_id == telegram_id))
-            u = q.scalar_one_or_none()
-            if not u:
-                return None
-            return {
-                "id": u.id,
-                "email": u.email,
-                "full_name": u.full_name,
-                "is_admin": u.is_admin,
-                "is_active": u.is_active,
-                "settings": u.settings,
-            }
-
-    async def touch_api_key_last_used(self, user_id: int, provider: str):
-        async with AsyncSessionLocal() as session:
-            await session.execute(
-                update(APIKey)
-                .where(APIKey.user_id == user_id, APIKey.provider == provider)
-                .values(last_used=func.now())
-            )
-            await session.commit()
-
+                stmt = stmt.where(APIKey.user_id == user_id)
+            stmt = stmt.order_by(APIKey.created_at.desc()).limit(500)
+            result = await session.execute(stmt)
+            keys = result.scalars().all()
+            return [
+                {
+                    "id": k.id,
+                    "user_id": k.user_id,
+                    "provider": k.provider,
+                    "created_at": k.created_at.isoformat() if k.created_at else None,
+                    "last_used": k.last_used.isoformat() if k.last_used else None,
+                }
+                for k in keys
+            ]
+async def init_db() -> None:
+    """Create tables if they don't exist (useful for quick start)."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)

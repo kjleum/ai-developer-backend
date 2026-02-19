@@ -1,67 +1,30 @@
-# Web Framework
-fastapi
-uvicorn[standard]
-python-multipart
-websockets
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+pydantic==2.6.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
 
-email-validator
+# DB
+SQLAlchemy[asyncio]==2.0.25
+asyncpg==0.29.0
+alembic==1.13.1
 
-# Data Validation & Env
-pydantic
-pydantic-settings
-python-dotenv
+# Auth & Security
+PyJWT==2.8.0
+passlib[bcrypt]==1.7.4
+cryptography==41.0.7
 
-# HTTP Client
-aiohttp
-httpx
+# HTTP
+aiohttp==3.9.0
+httpx==0.26.0
 
-# Database
-asyncpg
-SQLAlchemy[asyncio]
-alembic
-redis
+# Task queue (optional)
+celery==5.3.4
+redis==5.0.1
 
-# Vector Databases (для RAG)
-chromadb
-qdrant-client
-pgvector
+# AI providers
+openai==1.40.0
 
-# AI/ML
-transformers
-torch
-numpy
-scikit-learn
-sentence-transformers
-
-# Task Queue
-celery
-
-# Security
-bcrypt
-PyJWT
-cryptography
-passlib[bcrypt]
-python-jose[cryptography]
-
-# Rate Limiting
-slowapi
-
-# Integrations
-PyGithub
-
-# Media Processing
-Pillow
-librosa
-soundfile
-
-# Monitoring & Logging
-sentry-sdk
-structlog
-prometheus-client
-
-# Testing
-pytest
-pytest-asyncio
-
-# Production Server
-gunicorn
+# Rate limiting (optional)
+slowapi==0.1.8

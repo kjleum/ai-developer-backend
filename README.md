@@ -1,53 +1,76 @@
-# AI Developer Platform v5.0
+# AI Platform — Monorepo (Frontend + Backend)
 
-Полноценная платформа для AI-assisted разработки с разделением фронтенд/бэкенд, поддержкой 200+ функций, безопасным хранением ключей и масштабируемой архитектурой.
+Это рабочий MVP-бэкенд (FastAPI + Postgres) и статический фронтенд (Telegram Mini App / Web SPA на чистом JS).
 
-## 🚀 Быстрый старт
-
-### Предварительные требования
-- Docker и Docker Compose
-- Git (опционально)
-- Python 3.11+ (для локальной разработки)
-
-### Запуск через Docker Compose
-
-1. Клонируйте репозиторий или создайте структуру проекта
-2. Перейдите в корневую папку проекта
-3. Создайте файл `.env` на основе `backend/.env.example`:
-   ```bash
-   cp backend/.env.example backend/.env
-
-
-## Telegram Mini App (WebApp)
-
-1) Создай бота в BotFather и получи токен.
-2) В backend/.env установи:
-   - TELEGRAM_BOT_TOKEN=...
-3) В BotFather:
-   - /setdomain -> домен где будет фронт (HTTPS)
-   - /setmenubutton -> Web App URL (https://your-domain/)
-
-## Ключи моделей (на каждого пользователя)
-
-- Каждый пользователь добавляет ключи в интерфейсе: **Ключи → Save**.
-- Ключи хранятся в БД в таблице `api_keys` и **шифруются** Fernet (ENCRYPTION_KEY).
-- Можно использовать и глобальные ключи из .env, но для биллинга/контроля лучше per-user.
-
-## Админ панель
-
-- Админ создаётся автоматически при старте backend:
-  - ADMIN_EMAIL / ADMIN_PASSWORD в backend/.env
-- В интерфейсе админ видит: Users, Keys, Requests (usage log).
-
-## Запуск
+## Локальный запуск (Docker)
 
 ```bash
 cp backend/.env.example backend/.env
-# заполни JWT_SECRET, ENCRYPTION_KEY (Fernet), TELEGRAM_BOT_TOKEN, ADMIN_EMAIL/PASSWORD
+# заполни JWT_SECRET и ENCRYPTION_KEY (Fernet)
+
 docker compose up --build
 ```
 
-Открой:
-- Web/TG: http://localhost/  (через nginx фронта)
-- API Docs: http://localhost/api/docs
+- Frontend: http://localhost/
+- API docs: http://localhost/api/v1/docs
+- Health: http://localhost/api/v1/health
 
+## Основные эндпоинты
+
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login` (OAuth2 form)
+- `POST /api/v1/auth/login_json`
+- `POST /api/v1/auth/telegram` (Telegram Mini App initData)
+- `GET /api/v1/users/me`
+- `PUT /api/v1/users/me/settings`
+- `POST /api/v1/keys` / `GET /api/v1/keys` / `DELETE /api/v1/keys/{provider}`
+- `POST /api/v1/ai/generate`
+- `WS /api/v1/ai/stream`
+- `GET /api/v1/projects`
+
+## Деплой на Render (рекомендуемая схема)
+
+### 1) Postgres
+Создай **Render Postgres** и возьми `Internal Database URL` (или стандартный `DATABASE_URL`).
+
+### 2) Backend (Web Service)
+- Type: **Web Service**
+- Runtime: **Docker**
+- Root Directory: `backend`
+- Environment variables:
+  - `DATABASE_URL` = (из Postgres)
+  - `JWT_SECRET` = длинная строка
+  - `ENCRYPTION_KEY` = Fernet key
+  - `CORS_ORIGINS` = домен фронта (например `https://your-frontend.onrender.com`)
+  - (опционально) `OPENAI_API_KEY`, `GROQ_API_KEY`, `TELEGRAM_BOT_TOKEN`
+
+Healthcheck: `/api/v1/health`
+
+### 3) Frontend (Static Site)
+- Type: **Static Site**
+- Root Directory: `frontend`
+- Build Command: *(пусто)*
+- Publish Directory: `.`
+
+В `app.js` по умолчанию `apiBase = "/api/v1"`. Если фронт и бэк на разных доменах, укажи в UI **Настройки → API Base** полный URL бэка, например:
+
+`https://your-backend.onrender.com/api/v1`
+
+### 4) Telegram Mini App
+В BotFather:
+- `/setdomain` → домен фронта (HTTPS)
+- `/setmenubutton` → Web App URL (фронт)
+
+И в `backend` переменная:
+- `TELEGRAM_BOT_TOKEN`
+
+## Миграции
+
+Для продакшена лучше прогнать alembic:
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+(Но для быстрого старта API сам делает `create_all()` на startup.)

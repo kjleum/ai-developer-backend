@@ -16,13 +16,12 @@ class EmbeddingsRequest(BaseModel):
     texts: List[str]
     provider: Optional[str] = None
 
-# ----- Медиа -----
 class ImageGenerationRequest(BaseModel):
     prompt: str
     negative_prompt: str = ""
     width: int = 512
     height: int = 512
-    model: str = "sd"  # sd, kandinsky, dalle
+    model: str = "sd"
     steps: int = 30
     cfg_scale: float = 7.0
 
@@ -37,7 +36,7 @@ class TTSRequest(BaseModel):
     speed: float = 1.0
 
 class STTRequest(BaseModel):
-    audio: str  # base64
+    audio: str
 
 # ----- Проекты -----
 class ProjectType(str, Enum):
@@ -119,3 +118,36 @@ class ReminderOut(ReminderIn):
     id: int
     is_active: bool
     created_at: datetime
+
+# ----- Чаты -----
+class ChatThreadCreate(BaseModel):
+    project_id: int
+    title: str = "Новый чат"
+
+class ChatThreadOut(BaseModel):
+    id: int
+    project_id: int
+    title: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+class ChatMessageCreate(BaseModel):
+    role: Literal["user", "assistant", "system"] = "user"
+    content: str
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    temperature: float = 0.7
+    max_tokens: int = 2000
+
+class ChatMessageOut(BaseModel):
+    id: int
+    thread_id: int
+    role: str
+    content: str
+    created_at: Optional[datetime] = None
+
+# ----- Projects (simple CRUD) -----
+class ProjectCreate(BaseModel):
+    name: str
+    description: str = ""
+    config: Optional[Dict[str, Any]] = None
